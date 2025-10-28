@@ -2,8 +2,7 @@ import json, socket, time, argparse, uuid, logging
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
-RETRY_SECONDS = 30  # intervalo de reconexión fijo
-
+RETRY_SECONDS = 30  
 
 def cpu_uuid():
     return str(uuid.UUID(int=uuid.getnode()))
@@ -22,6 +21,10 @@ def main():
         format='[%(levelname)s] %(message)s'
     )    
 
+    if args.output is not None and args.output.strip() == "":
+        logging.error("Se indicó -o pero no se especificó archivo de salida.")
+        return
+    
     payload = {"UUID": cpu_uuid(), "ACTION": "subscribe"}
 
     while True:
@@ -52,10 +55,20 @@ def main():
                         text = json.dumps(msg, ensure_ascii=False, indent=2)
                         print(text)
                         if args.output:
-                            with open(args.output, "a", encoding="utf-8") as f:
-                                f.write(text + "\n")
+                            try:
+                                with open(args.output, "a", encoding="utf-8") as f:
+                                    f.write(text + "\n")
+                            except OSError as e:
+                                logging.error("No se pudo escribir en el archivo de salida '%s': %s", args.output, e)
+
+        except ConnectionRefusedError:
+            logging.error("No se pudo conectar al servidor (%s:%d). ¿Está iniciado?", args.server, args.port)
+        except socket.timeout:
+            logging.error("Tiempo de espera agotado al intentar conectar con el servidor.")
+        except OSError as e:
+            logging.error("Error de conexión con el servidor: %s", e)
         except Exception as e:
-            logging.warning("Error: %s", e)
+            logging.warning("Error inesperado: %s", e)
 
         logging.info("Reintentando en %d segundos...", RETRY_SECONDS)
         time.sleep(RETRY_SECONDS)

@@ -3,6 +3,12 @@ import threading
 import json
 import uuid
 import logging
+import decimal
+
+def default_converter(o):
+    if isinstance(o, decimal.Decimal):
+        return float(o)
+    raise TypeError
 
 class DynamoSingleton:
     _instance = None
@@ -27,6 +33,9 @@ class DynamoProxy:
         self.observers = []
 
     def get(self, record_id, uuid_cliente=None):
+        if not record_id:
+            logging.error("Operación 'get' inválida: falta id.")
+            return {"error": "Debe indicar un id para 'get'."}
         if isinstance(self.db.corporate_data, dict):
             record = self.db.corporate_data.get(record_id)
         else:
@@ -45,6 +54,9 @@ class DynamoProxy:
         return records
 
     def set(self, record_id, data, uuid_cliente=None):
+        if not record_id or not data:
+            logging.error("Operación 'set' inválida: faltan id o datos.")
+            return {"error": "Faltan campos obligatorios para 'set'."}
         if isinstance(self.db.corporate_data, dict):
             self.db.corporate_data[record_id] = data
         else:
@@ -54,7 +66,7 @@ class DynamoProxy:
         return True
 
     def log_action(self, action, record_id, uuid_cliente=None):
-        log_entry = {'idlog': str(uuid.uuid4()),'uuid': uuid_cliente,'accion': action,'record_id': record_id,'timestamp': str(uuid.uuid1())}
+        log_entry = {'id': str(uuid.uuid4()),'CPUid': uuid_cliente,'accion': action,'record_id': record_id,'timestamp': str(uuid.uuid1())}
         if isinstance(self.db.corporate_log, list):
             self.db.corporate_log.append(log_entry)
         else:
@@ -115,7 +127,7 @@ def handle_client(conn, proxy):
                     continue
                 else:
                     resp = {'error':'acción desconocida'}
-                conn.sendall((json.dumps(resp)+"\n").encode('utf-8'))
+                conn.sendall((json.dumps(resp, default=default_converter) + "\n").encode('utf-8'))
     finally:
         proxy.remove_observer(conn)
         conn.close()
@@ -135,15 +147,16 @@ def main():
 
     HOST = "127.0.0.1"
     PORT = args.port
-    singleton = DynamoSingleton(use_aws=False)
+    singleton = DynamoSingleton(use_aws=True)
     proxy = DynamoProxy(singleton)
 
-    logging.info("Logs actuales al iniciar:")
-    for log in proxy.db.corporate_log:
-        logging.info(log)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((HOST, PORT))
+    except OSError:
+        logging.error("No se pudo iniciar el servidor: el puerto %d ya está en uso.", PORT)
+        return
 
-    s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-    s.bind((HOST,PORT))
     s.listen(5)
     logging.info("Servidor escuchando en %s:%d", HOST, PORT)
 

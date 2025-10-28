@@ -1,8 +1,7 @@
-import json, socket, argparse, uuid, logging
+import json, socket, argparse, uuid, logging, os
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
-
 
 def cpu_uuid():
     return str(uuid.UUID(int=uuid.getnode()))
@@ -22,15 +21,36 @@ def main():
         format='[%(levelname)s] %(message)s'
     )
 
-    with open(args.input, "r", encoding="utf-8") as f:
-        req = json.load(f)
-
+    if args.input and not os.path.exists(args.input):
+        logging.error("El archivo indicado con -i no existe o el nombre está vacío: %s", args.input)
+        return
+    
+    try:
+        with open(args.input, "r", encoding="utf-8") as f:
+            req = json.load(f)
+    except FileNotFoundError:
+        logging.error("No se encontró el archivo indicado en -i.")
+        return
+    except json.JSONDecodeError:
+        logging.error("El archivo de entrada no contiene un JSON válido.")
+        return
+    
     req.setdefault("UUID", cpu_uuid())
 
-    logging.info("Conectando a %s:%d", args.server, args.port)
-    with socket.create_connection((args.server, args.port)) as s:
-        s.sendall((json.dumps(req) + "\n").encode("utf-8"))
-        data = s.recv(65535).decode("utf-8").strip()
+    try:
+        logging.info("Conectando a %s:%d", args.server, args.port)
+        with socket.create_connection((args.server, args.port)) as s:
+            s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+            data = s.recv(65535).decode("utf-8").strip()
+    except ConnectionRefusedError:
+        logging.error("No se pudo conectar al servidor (%s:%d). ¿Está iniciado?", args.server, args.port)
+        return
+    except socket.timeout:
+        logging.error("Tiempo de espera agotado al intentar conectar con el servidor.")
+        return
+    except OSError as e:
+        logging.error("Error de conexión con el servidor: %s", e)
+        return
 
     resp = json.loads(data)
     logging.info("Respuesta recibida del servidor")
