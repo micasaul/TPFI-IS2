@@ -1,4 +1,4 @@
-import json, socket, argparse, uuid
+import json, socket, argparse, uuid, logging
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
@@ -17,25 +17,28 @@ def main():
     p.add_argument("-v", "--verbose", action="store_true", help="Mostrar información de depuración")
     args = p.parse_args()
 
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format='[%(levelname)s] %(message)s'
+    )
+
     with open(args.input, "r", encoding="utf-8") as f:
         req = json.load(f)
 
     req.setdefault("UUID", cpu_uuid())
 
-    if args.verbose:
-        print(f"[CLIENTE] Conectando a {args.server}:{args.port}")
-    s = socket.create_connection((args.server, args.port))
-    s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+    logging.info("Conectando a %s:%d", args.server, args.port)
+    with socket.create_connection((args.server, args.port)) as s:
+        s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+        data = s.recv(65535).decode("utf-8").strip()
 
-    data = s.recv(65535).decode("utf-8").strip()
-    s.close()
     resp = json.loads(data)
+    logging.info("Respuesta recibida del servidor")
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(resp, f, ensure_ascii=False, indent=2)
-        if args.verbose:
-            print(f"[CLIENTE] Respuesta guardada en {args.output}")
+        logging.info("Respuesta guardada en %s", args.output)
     else:
         print(json.dumps(resp, ensure_ascii=False, indent=2))
 
